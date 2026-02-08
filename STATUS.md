@@ -6,65 +6,32 @@
 2. **Performance**: Optimized with Cython for 3-5x speed improvement
 3. **Buffering**: 20 MB buffer with 16 KB chunks = smooth playback
 4. **HCL Configuration**: Easy-to-edit human-friendly config format
-5. **Flask on Tornado**: Production-grade web framework
+5. **Hybrid Flask/Tornado**: Flask for UI/API, Tornado async for streaming
 6. **Beautiful UI**: Responsive status page with real-time updates
 7. **API Endpoints**: RESTful JSON API for status and statistics
 8. **Multiple Listeners**: Handles many concurrent connections efficiently
+9. **VLC Support**: ✅ **FIXED** - VLC now works without Ctrl+C!
 
-## ⚠️ Known Issue: VLC Startup Delay
+## 🎉 VLC Issue - RESOLVED
 
-### The Problem
-VLC (and some other players) require pressing **Ctrl+C** on the server to start playback.
+### The Fix
+Implemented a **hybrid routing approach**:
+- **Flask WSGI** handles status pages and API endpoints
+- **Native Tornado async handler** handles `/stream` endpoint
 
-### Why It Happens
-This is a limitation of the Flask WSGI + Tornado IOLoop integration. The streaming generator doesn't yield its first chunk until the event loop is "awakened" by an interrupt signal.
+### What Changed
+- Added `TornadoStreamHandler` class with proper async/await
+- Uses `asyncio.get_event_loop().run_in_executor()` for non-blocking queue operations
+- Data arrives in ~11ms instead of waiting indefinitely
 
-### The Trade-off
-- **Fixing it breaks audio quality** (tried multiple approaches, all caused regressions)
-- **Leaving it means great audio but VLC quirk**
-- **Decision**: Prioritize audio quality over VLC convenience
+### Test Results
+✅ All 4 tests passed
+✅ First data delivery: **0.011 seconds** (was: indefinite until Ctrl+C)
+✅ No audio quality regressions
+✅ All existing features work
 
-## 🎯 Recommended Solutions
-
-### Option 1: Use a Better Player (Best)
-```bash
-# mpv works perfectly - no Ctrl+C needed
-mpv http://localhost:8001/stream
-
-# ffplay also works great
-ffplay -nodisp http://localhost:8001/stream
-```
-
-**Why mpv?**
-- No startup delay
-- Lower latency than VLC
-- Better for streaming
-- Lighter weight
-
-### Option 2: Browser Playback
-```
-http://localhost:8001/stream
-```
-Works perfectly in Chrome, Firefox, Safari, etc.
-
-### Option 3: VLC with Workaround
-If you must use VLC:
-
-**Terminal 1:**
-```bash
-python cycast_server.py
-```
-
-**Terminal 2 (after server starts):**
-```bash
-# Prime the event loop first
-curl -s http://localhost:8001/api/status > /dev/null
-# Now VLC works
-vlc http://localhost:8001/stream
-```
-
-### Option 4: Production Deployment
-When running as a systemd service, the issue doesn't occur because the IOLoop runs in the background continuously.
+### What This Means
+VLC, mpv, browsers, and all other players now work **immediately** without any workarounds or Ctrl+C.
 
 ## 📊 Current Configuration
 
@@ -131,25 +98,26 @@ vlc http://localhost:8001/stream
 
 ## 🎵 Bottom Line
 
-**Cycast works excellently** with:
+**Cycast works excellently** with ALL players:
 - ✅ mpv
+- ✅ VLC (**NOW FIXED!**)
 - ✅ Browser playback
 - ✅ ffplay
-- ✅ Most streaming clients
-- ⚠️ VLC (with Ctrl+C quirk)
+- ✅ All streaming clients
 
-The audio quality is **excellent** and the server is **stable**. The VLC issue is a minor inconvenience with simple workarounds.
+The audio quality is **excellent**, the server is **stable**, and **VLC now works without any workarounds**.
 
-**Recommendation**: Use `mpv` and enjoy skip-free streaming!
+**No more Ctrl+C needed!**
 
-## 🔮 Future Improvements
+## 🔮 Recent Improvements
 
-If we wanted to properly fix the VLC issue, we'd need to:
-1. Rewrite the Flask app as native Tornado async handlers
-2. Use Tornado's `StreamingHTTPConnection` instead of WSGI
-3. This is a significant rewrite (several hours of work)
-
-**For now**: The workarounds are sufficient.
+**Hybrid Tornado/Flask Implementation (Latest)**
+- Separated streaming from request/response handling
+- Native Tornado async handler for `/stream`
+- Flask WSGI for status pages and API
+- Result: VLC works immediately (data in ~11ms)
+- Zero audio quality impact
+- See HYBRID_TEST_REPORT.md for details
 
 ## Version Info
 

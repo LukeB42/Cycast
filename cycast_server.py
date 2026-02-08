@@ -13,6 +13,8 @@ import os
 import random
 import sys
 import logging
+import asyncio
+import queue as Queue
 
 # Import Cython modules for performance
 import audio_buffer
@@ -25,6 +27,7 @@ from config_loader import load_config
 from tornado.wsgi import WSGIContainer
 from tornado.httpserver import HTTPServer as TornadoHTTPServer
 from tornado.ioloop import IOLoop
+import tornado.web
 from flask_app import StreamWebApp
 
 # Configure logging to stdout only
@@ -34,6 +37,109 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger('cycast')
+
+
+class TornadoStreamHandler(tornado.web.RequestHandler):
+    """
+    Native Tornado async handler for /stream endpoint
+    This fixes the VLC startup delay issue by using proper async streaming
+    instead of Flask WSGI generators
+    """
+    
+    def initialize(self, stream_server):
+        """Initialize with reference to the StreamServer instance"""
+        self.stream_server = stream_server
+    
+    async def get(self):
+        """Handle GET request for audio stream"""
+        client_ip = self.request.remote_ip
+        logger.info(f"New listener from {client_ip} (Tornado async handler)")
+        
+        # Set response headers
+        self.set_header('Content-Type', 'audio/mpeg')
+        self.set_header('Cache-Control', 'no-cache, no-store')
+        self.set_header('Pragma', 'no-cache')
+        self.set_header('Connection', 'close')
+        self.set_header('Accept-Ranges', 'none')
+        
+        # ICY metadata support
+        if self.request.headers.get('Icy-MetaData') == '1' and \
+           self.stream_server.config.get('metadata', 'enable_icy'):
+            self.set_header('icy-metaint', 
+                          str(self.stream_server.config.get('metadata', 'icy_metaint')))
+            self.set_header('icy-name', 
+                          self.stream_server.config.get('metadata', 'station_name'))
+            self.set_header('icy-genre', 
+                          self.stream_server.config.get('metadata', 'station_genre'))
+            self.set_header('icy-url', 
+                          self.stream_server.config.get('metadata', 'station_url'))
+        
+        # Create queue-based writer for the broadcaster
+        class StreamWriter:
+            def __init__(self):
+                self.queue = Queue.Queue(maxsize=500)
+                self.active = True
+            
+            def write(self, data):
+                if self.active:
+                    try:
+                        self.queue.put(data, block=False)
+                    except Queue.Full:
+                        pass
+            
+            def flush(self):
+                pass
+            
+            def close(self):
+                self.active = False
+        
+        writer = StreamWriter()
+        listener_id = self.stream_server.broadcaster.add_listener(writer)
+        
+        try:
+            # Stream data asynchronously
+            loop = asyncio.get_event_loop()
+            
+            while self.stream_server.broadcaster.is_listener_active(listener_id):
+                try:
+                    # Get data from queue asynchronously (non-blocking)
+                    # This is the key difference from Flask WSGI
+                    data = await loop.run_in_executor(
+                        None,  # Use default executor
+                        self._get_from_queue,
+                        writer.queue
+                    )
+                    
+                    if data:
+                        self.write(data)
+                        await self.flush()
+                        
+                except Queue.Empty:
+                    # No data available, continue waiting
+                    await asyncio.sleep(0.01)
+                    continue
+                except Exception as e:
+                    logger.error(f"Listener {client_ip} streaming error: {e}")
+                    break
+                    
+        except Exception as e:
+            logger.error(f"Listener {client_ip} connection error: {e}")
+        finally:
+            writer.close()
+            self.stream_server.broadcaster.remove_listener(listener_id)
+            logger.info(f"Listener {client_ip} cleanup complete")
+    
+    def _get_from_queue(self, q):
+        """Helper to get data from queue with timeout"""
+        try:
+            return q.get(timeout=0.5)
+        except Queue.Empty:
+            raise
+    
+    def on_connection_close(self):
+        """Called when client disconnects"""
+        logger.info(f"Listener {self.request.remote_ip} disconnected (connection closed)")
+
 
 
 class StreamServer:
@@ -326,7 +432,7 @@ class StreamServer:
         # Start broadcaster thread
         self.broadcaster.start()
         
-        # Create Flask application
+        # Create Flask application for status page and API
         web_app = StreamWebApp(self, self.config)
         flask_app = web_app.get_app()
         
@@ -336,13 +442,23 @@ class StreamServer:
         from tornado.ioloop import IOLoop
         import tornado.web
         
-        # Create WSGI container
-        container = WSGIContainer(flask_app)
+        # Create WSGI container for Flask
+        wsgi_container = WSGIContainer(flask_app)
         
-        # Create Tornado application
+        # Create Tornado application with hybrid routing:
+        # - Native Tornado async handler for /stream (fixes VLC issue)
+        # - Flask WSGI for everything else (/, /api/*, etc.)
         tornado_app = tornado.web.Application([
-            (r".*", tornado.web.FallbackHandler, dict(fallback=container)),
+            # Native async handler for audio streaming
+            (r"/stream", TornadoStreamHandler, dict(stream_server=self)),
+            
+            # All other routes handled by Flask WSGI
+            (r".*", tornado.web.FallbackHandler, dict(fallback=wsgi_container)),
         ])
+        
+        logger.info("Using hybrid Flask/Tornado routing:")
+        logger.info("  /stream -> Tornado async handler (fixes VLC)")
+        logger.info("  /* -> Flask WSGI (status page, API)")
         
         # Create HTTP server with settings optimized for streaming
         http_server = TornadoHTTPServer(

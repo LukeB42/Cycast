@@ -36,10 +36,9 @@ class StreamWebApp:
             """Serve status page"""
             return self._render_status_page()
         
-        @self.app.route(self.config.get('server', 'mount_point'))
-        def stream():
-            """Serve audio stream"""
-            return self._serve_stream()
+        # NOTE: /stream endpoint is now handled by native Tornado async handler
+        # in cycast_server.py (TornadoStreamHandler) to fix VLC startup delay.
+        # Do not add a Flask route for /stream here.
         
         @self.app.route('/api/status')
         def api_status():
