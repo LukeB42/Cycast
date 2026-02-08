@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Cython build artifacts
+*.c
+
+# Documentation
+*.md
+!README.md
+
+# Test files
+test_*.py
+diagnose.py
+generate_test_audio.py
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Music files (should be mounted as volume)
+music/
+
+# Logs
+*.log

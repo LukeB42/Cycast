@@ -1,0 +1,5 @@
+Cython>=3.0.0
+setuptools>=60.0.0
+pyhcl>=0.4.4
+Flask>=3.0.0
+tornado>=6.4.0

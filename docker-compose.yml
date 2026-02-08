@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  cycast:
+    build: .
+    image: cycast:latest
+    container_name: cycast-server
+    restart: unless-stopped
+    
+    ports:
+      - "8000:8000"  # Source port (DJ connections)
+      - "8001:8001"  # Listener port (HTTP streaming)
+    
+    volumes:
+      # Mount your music directory
+      - ./music:/app/music:ro
+      
+      # Optional: Custom configuration
+      # - ./config.hcl:/app/config.hcl:ro
+      
+      # Optional: Persist logs
+      # - ./logs:/var/log/cycast
+    
+    environment:
+      # Optional: Override log level
+      - CYCAST_LOG_LEVEL=INFO
+    
+    # Optional: Resource limits
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '1.0'
+    #       memory: 512M
+    #     reservations:
+    #       cpus: '0.5'
+    #       memory: 256M
+    
+    # Optional: Healthcheck (already in Dockerfile)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/api/status')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+# Optional: Network configuration
+# networks:
+#   default:
+#     driver: bridge
