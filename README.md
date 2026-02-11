@@ -11,7 +11,7 @@ A high-performance internet radio streaming server written in Python with Cython
 
 ## Features
 
-- **Live Source Support**: Accept streams from Mixxx, VLC, BUTT, or any Icecast/Shoutcast source client
+- **Live Source Support**: Accept streams from Mixxx, VLC, Virtual DJ, or any Icecast/Shoutcast source client
 - **Playlist Fallback**: Automatically plays from a playlist when no live source is connected
 - **High Performance**: Cython-optimized audio buffer and broadcaster for efficient streaming
 - **Multiple Listeners**: Handle many simultaneous listeners efficiently with Tornado
@@ -19,6 +19,8 @@ A high-performance internet radio streaming server written in Python with Cython
 - **RESTful API**: JSON endpoints for status and statistics
 - **HCL Configuration**: Easy-to-read and maintain configuration files
 - **Seamless Switching**: Automatically switches between live source and playlist
+
+![Web UI screenshot](cycast_screenshot.png)
 
 ## Architecture
 
